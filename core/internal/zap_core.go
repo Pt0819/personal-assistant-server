@@ -1,18 +1,13 @@
 package internal
 
 import (
-	"context"
-	"fmt"
+	"os"
+	"time"
+
 	"personal-assistant-server/global"
-	"personal-assistant-server/model/system"
-	"personal-assistant-server/service"
-	astutil "personal-assistant-server/utils/ast"
-	"personal-assistant-server/utils/stacktrace"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"os"
-	"strings"
-	"time"
 )
 
 type ZapCore struct {
@@ -67,65 +62,7 @@ func (z *ZapCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 			z.Core = zapcore.NewCore(global.GVA_CONFIG.Zap.Encoder(), syncer, z.level)
 		}
 	}
-	// 先写入原日志目标
-	err := z.Core.Write(entry, fields)
-
-	// 捕捉 Error 及以上级别日志并入库，且可提取 zap.Error(err) 的错误内容
-	if entry.Level >= zapcore.ErrorLevel {
-		// 避免与 GORM zap 写入互相递归：跳过由 gorm logger writer 触发的日志
-		if strings.Contains(entry.Caller.File, "gorm_logger_writer.go") {
-			return err
-		}
-
-		form := "后端"
-		level := entry.Level.String()
-		// 生成基础信息
-		info := entry.Message
-
-		// 提取 zap.Error(err) 内容
-		var errStr string
-		for i := 0; i < len(fields); i++ {
-			f := fields[i]
-			if f.Type == zapcore.ErrorType || f.Key == "error" || f.Key == "err" {
-				if f.Interface != nil {
-					errStr = fmt.Sprintf("%v", f.Interface)
-				} else if f.String != "" {
-					errStr = f.String
-				}
-				break
-			}
-		}
-		if errStr != "" {
-			info = fmt.Sprintf("%s | 错误: %s", info, errStr)
-		}
-
-		// 附加来源与堆栈信息
-		if entry.Caller.File != "" {
-			info = fmt.Sprintf("%s \n 源文件:%s:%d", info, entry.Caller.File, entry.Caller.Line)
-		}
-		stack := entry.Stack
-		if stack != "" {
-			info = fmt.Sprintf("%s \n 调用栈：%s", info, stack)
-			// 解析最终业务调用方，并提取其方法源码
-			if frame, ok := stacktrace.FindFinalCaller(stack); ok {
-				fnName, fnSrc, sLine, eLine, exErr := astutil.ExtractFuncSourceByPosition(frame.File, frame.Line)
-				if exErr == nil {
-					info = fmt.Sprintf("%s \n 最终调用方法:%s:%d (%s lines %d-%d)\n----- 产生日志的方法代码如下 -----\n%s", info, frame.File, frame.Line, fnName, sLine, eLine, fnSrc)
-				} else {
-					info = fmt.Sprintf("%s \n 最终调用方法:%s:%d (%s) | extract_err=%v", info, frame.File, frame.Line, fnName, exErr)
-				}
-			}
-		}
-
-		// 使用后台上下文，避免依赖 gin.Context
-		ctx := context.Background()
-		_ = service.ServiceGroupApp.SystemServiceGroup.SysErrorService.CreateSysError(ctx, &system.SysError{
-			Form:  &form,
-			Info:  &info,
-			Level: level,
-		})
-	}
-	return err
+	return z.Core.Write(entry, fields)
 }
 
 func (z *ZapCore) Sync() error {

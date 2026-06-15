@@ -1,14 +1,21 @@
 package utils
 
 import (
-	"context"
 	"errors"
 	"time"
 
 	"personal-assistant-server/global"
-	"personal-assistant-server/model/system/request"
+
 	jwt "github.com/golang-jwt/jwt/v5"
 )
+
+// WechatClaims JWT claims for WeChat mini-program users
+type WechatClaims struct {
+	UserID     uint   `json:"user_id"`
+	OpenID     string `json:"open_id"`
+	BufferTime int64  `json:"buffer_time"`
+	jwt.RegisteredClaims
+}
 
 type JWT struct {
 	SigningKey []byte
@@ -29,39 +36,35 @@ func NewJWT() *JWT {
 	}
 }
 
-func (j *JWT) CreateClaims(baseClaims request.BaseClaims) request.CustomClaims {
+// CreateClaims creates WechatClaims with configured expiration
+func (j *JWT) CreateClaims(userID uint, openID string) WechatClaims {
 	bf, _ := ParseDuration(global.GVA_CONFIG.JWT.BufferTime)
 	ep, _ := ParseDuration(global.GVA_CONFIG.JWT.ExpiresTime)
-	claims := request.CustomClaims{
-		BaseClaims: baseClaims,
-		BufferTime: int64(bf / time.Second), // 缓冲时间1天 缓冲时间内会获得新的token刷新令牌 此时一个用户会存在两个有效令牌 但是前端只留一个 另一个会丢失
+	claims := WechatClaims{
+		UserID:     userID,
+		OpenID:     openID,
+		BufferTime: int64(bf / time.Second),
 		RegisteredClaims: jwt.RegisteredClaims{
-			Audience:  jwt.ClaimStrings{"GVA"},                   // 受众
+			Audience:  jwt.ClaimStrings{"PA"},                    // Personal Assistant
 			NotBefore: jwt.NewNumericDate(time.Now().Add(-1000)), // 签名生效时间
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ep)),    // 过期时间 7天  配置文件
-			Issuer:    global.GVA_CONFIG.JWT.Issuer,              // 签名的发行者
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ep)),    // 过期时间
+			Issuer:    global.GVA_CONFIG.JWT.Issuer,              // 签发者
 		},
 	}
+	// 缓冲时间用于token自动刷新
+	_ = bf
 	return claims
 }
 
-// CreateToken 创建一个token
-func (j *JWT) CreateToken(claims request.CustomClaims) (string, error) {
+// CreateToken creates a signed JWT token
+func (j *JWT) CreateToken(claims WechatClaims) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(j.SigningKey)
 }
 
-// CreateTokenByOldToken 旧token 换新token 使用归并回源避免并发问题
-func (j *JWT) CreateTokenByOldToken(oldToken string, claims request.CustomClaims) (string, error) {
-	v, err, _ := global.GVA_Concurrency_Control.Do("JWT:"+oldToken, func() (interface{}, error) {
-		return j.CreateToken(claims)
-	})
-	return v.(string), err
-}
-
-// ParseToken 解析 token
-func (j *JWT) ParseToken(tokenString string) (*request.CustomClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &request.CustomClaims{}, func(token *jwt.Token) (i interface{}, e error) {
+// ParseToken parses and validates a JWT token string
+func (j *JWT) ParseToken(tokenString string) (*WechatClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &WechatClaims{}, func(token *jwt.Token) (i interface{}, e error) {
 		return j.SigningKey, nil
 	})
 
@@ -80,26 +83,9 @@ func (j *JWT) ParseToken(tokenString string) (*request.CustomClaims, error) {
 		}
 	}
 	if token != nil {
-		if claims, ok := token.Claims.(*request.CustomClaims); ok && token.Valid {
+		if claims, ok := token.Claims.(*WechatClaims); ok && token.Valid {
 			return claims, nil
 		}
 	}
 	return nil, TokenValid
-}
-
-//@author: [piexlmax](https://github.com/piexlmax)
-//@function: SetRedisJWT
-//@description: jwt存入redis并设置过期时间
-//@param: jwt string, userName string
-//@return: err error
-
-func SetRedisJWT(jwt string, userName string) (err error) {
-	// 此处过期时间等于jwt过期时间
-	dr, err := ParseDuration(global.GVA_CONFIG.JWT.ExpiresTime)
-	if err != nil {
-		return err
-	}
-	timer := dr
-	err = global.GVA_REDIS.Set(context.Background(), userName, jwt, timer).Err()
-	return err
 }

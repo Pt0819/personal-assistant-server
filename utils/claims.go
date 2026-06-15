@@ -5,14 +5,11 @@ import (
 	"time"
 
 	"personal-assistant-server/global"
-	"personal-assistant-server/model/system"
-	systemReq "personal-assistant-server/model/system/request"
+
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 func ClearToken(c *gin.Context) {
-	// 增加cookie x-token 向来源的web添加
 	host, _, err := net.SplitHostPort(c.Request.Host)
 	if err != nil {
 		host = c.Request.Host
@@ -26,7 +23,6 @@ func ClearToken(c *gin.Context) {
 }
 
 func SetToken(c *gin.Context, token string, maxAge int) {
-	// 增加cookie x-token 向来源的web添加
 	host, _, err := net.SplitHostPort(c.Request.Host)
 	if err != nil {
 		host = c.Request.Host
@@ -42,6 +38,13 @@ func SetToken(c *gin.Context, token string, maxAge int) {
 func GetToken(c *gin.Context) string {
 	token := c.Request.Header.Get("x-token")
 	if token == "" {
+		// Also check Authorization: Bearer <token>
+		authHeader := c.Request.Header.Get("Authorization")
+		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+			token = authHeader[7:]
+		}
+	}
+	if token == "" {
 		j := NewJWT()
 		token, _ = c.Cookie("x-token")
 		claims, err := j.ParseToken(token)
@@ -54,7 +57,8 @@ func GetToken(c *gin.Context) string {
 	return token
 }
 
-func GetClaims(c *gin.Context) (*systemReq.CustomClaims, error) {
+// GetClaims extracts WechatClaims from the Gin context
+func GetClaims(c *gin.Context) (*WechatClaims, error) {
 	token := GetToken(c)
 	j := NewJWT()
 	claims, err := j.ParseToken(token)
@@ -64,85 +68,30 @@ func GetClaims(c *gin.Context) (*systemReq.CustomClaims, error) {
 	return claims, err
 }
 
-// GetUserID 从Gin的Context中获取从jwt解析出来的用户ID
+// GetUserID extracts user ID from JWT claims in Gin context
 func GetUserID(c *gin.Context) uint {
 	if claims, exists := c.Get("claims"); !exists {
 		if cl, err := GetClaims(c); err != nil {
 			return 0
 		} else {
-			return cl.BaseClaims.ID
+			return cl.UserID
 		}
 	} else {
-		waitUse := claims.(*systemReq.CustomClaims)
-		return waitUse.BaseClaims.ID
+		waitUse := claims.(*WechatClaims)
+		return waitUse.UserID
 	}
 }
 
-// GetUserUuid 从Gin的Context中获取从jwt解析出来的用户UUID
-func GetUserUuid(c *gin.Context) uuid.UUID {
-	if claims, exists := c.Get("claims"); !exists {
-		if cl, err := GetClaims(c); err != nil {
-			return uuid.UUID{}
-		} else {
-			return cl.UUID
-		}
-	} else {
-		waitUse := claims.(*systemReq.CustomClaims)
-		return waitUse.UUID
-	}
-}
-
-// GetUserAuthorityId 从Gin的Context中获取从jwt解析出来的用户角色id
-func GetUserAuthorityId(c *gin.Context) uint {
-	if claims, exists := c.Get("claims"); !exists {
-		if cl, err := GetClaims(c); err != nil {
-			return 0
-		} else {
-			return cl.AuthorityId
-		}
-	} else {
-		waitUse := claims.(*systemReq.CustomClaims)
-		return waitUse.AuthorityId
-	}
-}
-
-// GetUserInfo 从Gin的Context中获取从jwt解析出来的用户角色id
-func GetUserInfo(c *gin.Context) *systemReq.CustomClaims {
-	if claims, exists := c.Get("claims"); !exists {
-		if cl, err := GetClaims(c); err != nil {
-			return nil
-		} else {
-			return cl
-		}
-	} else {
-		waitUse := claims.(*systemReq.CustomClaims)
-		return waitUse
-	}
-}
-
-// GetUserName 从Gin的Context中获取从jwt解析出来的用户名
-func GetUserName(c *gin.Context) string {
+// GetOpenID extracts WeChat OpenID from JWT claims in Gin context
+func GetOpenID(c *gin.Context) string {
 	if claims, exists := c.Get("claims"); !exists {
 		if cl, err := GetClaims(c); err != nil {
 			return ""
 		} else {
-			return cl.Username
+			return cl.OpenID
 		}
 	} else {
-		waitUse := claims.(*systemReq.CustomClaims)
-		return waitUse.Username
+		waitUse := claims.(*WechatClaims)
+		return waitUse.OpenID
 	}
-}
-
-func LoginToken(user system.Login) (token string, claims systemReq.CustomClaims, err error) {
-	j := NewJWT()
-	claims = j.CreateClaims(systemReq.BaseClaims{
-		UUID:        user.GetUUID(),
-		ID:          user.GetUserId(),
-		NickName:    user.GetNickname(),
-		Username:    user.GetUsername(),
-		AuthorityId: user.GetAuthorityId(),
-	})
-	token, err = j.CreateToken(claims)
-	return
 }

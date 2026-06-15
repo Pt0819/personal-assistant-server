@@ -1,11 +1,5 @@
 package router
 
-import (
-	"personal-assistant-server/router/system"
-)
-
 var RouterGroupApp = new(RouterGroup)
 
-type RouterGroup struct {
-	System system.RouterGroup
-}
+type RouterGroup struct{}

@@ -1,19 +1,20 @@
 package core
 
 import (
-    "fmt"
-    "personal-assistant-server/core/internal"
-    "personal-assistant-server/global"
-    "personal-assistant-server/utils"
-    "go.uber.org/zap"
-    "go.uber.org/zap/zapcore"
-    "os"
+	"fmt"
+	"os"
+
+	"personal-assistant-server/core/internal"
+	"personal-assistant-server/global"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // Zap 获取 zap.Logger
 // Author [SliverHorn](https://github.com/SliverHorn)
 func Zap() (logger *zap.Logger) {
-	if ok, _ := utils.PathExists(global.GVA_CONFIG.Zap.Director); !ok { // 判断是否有Director文件夹
+	if _, err := os.Stat(global.GVA_CONFIG.Zap.Director); os.IsNotExist(err) { // 判断是否有Director文件夹
 		fmt.Printf("create %v directory\n", global.GVA_CONFIG.Zap.Director)
 		_ = os.Mkdir(global.GVA_CONFIG.Zap.Director, os.ModePerm)
 	}
@@ -24,8 +25,8 @@ func Zap() (logger *zap.Logger) {
 		core := internal.NewZapCore(levels[i])
 		cores = append(cores, core)
 	}
-    // 构建基础 logger（错误级别的入库逻辑已在自定义 ZapCore 中处理）
-    logger = zap.New(zapcore.NewTee(cores...))
+	// 构建基础 logger（错误级别的入库逻辑已在自定义 ZapCore 中处理）
+	logger = zap.New(zapcore.NewTee(cores...))
 	// 启用 Error 及以上级别的堆栈捕捉，确保 entry.Stack 可用
 	opts := []zap.Option{zap.AddStacktrace(zapcore.ErrorLevel)}
 	if global.GVA_CONFIG.Zap.ShowLine {
