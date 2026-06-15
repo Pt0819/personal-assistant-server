@@ -5,6 +5,7 @@ import (
 	"personal-assistant-server/api/v1/conversation"
 	"personal-assistant-server/api/v1/push"
 	"personal-assistant-server/api/v1/schedule"
+	"personal-assistant-server/api/v1/user"
 	"personal-assistant-server/api/v1/view"
 )
 
@@ -16,4 +17,5 @@ type ApiGroup struct {
 	ConversationApi conversation.ConversationApi
 	ViewApi         view.ViewApi
 	PushApi         push.PushApi
+	UserApi         user.UserApi
 }

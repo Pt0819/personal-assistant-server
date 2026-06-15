@@ -37,6 +37,7 @@ func Routers() *gin.Engine {
 		router.InitConversationRouter(PrivateGroup)
 		router.InitViewRouter(PrivateGroup)
 		router.InitPushRouter(PrivateGroup)
+		router.InitUserRouter(PrivateGroup)
 	}
 
 	global.GVA_LOG.Info("router register success")

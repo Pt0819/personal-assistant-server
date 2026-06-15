@@ -5,6 +5,7 @@ import (
 	"personal-assistant-server/service/conversation"
 	"personal-assistant-server/service/push"
 	"personal-assistant-server/service/schedule"
+	"personal-assistant-server/service/user"
 	"personal-assistant-server/service/view"
 )
 
@@ -16,4 +17,5 @@ type ServiceGroup struct {
 	ConversationService conversation.ConversationService
 	PushService         push.PushService
 	ViewService         view.ViewService
+	UserService         user.UserService
 }
