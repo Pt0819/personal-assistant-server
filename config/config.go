@@ -8,4 +8,5 @@ type Server struct {
 	Mysql  Mysql  `mapstructure:"mysql" json:"mysql" yaml:"mysql"`
 	Wechat Wechat `mapstructure:"wechat" json:"wechat" yaml:"wechat"`
 	Grpc   Grpc   `mapstructure:"grpc" json:"grpc" yaml:"grpc"`
+	Oss    Oss    `mapstructure:"oss" json:"oss" yaml:"oss"`
 }

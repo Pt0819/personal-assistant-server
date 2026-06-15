@@ -55,3 +55,13 @@ wechat:
 # Agent Server gRPC 配置
 grpc:
   agent-addr: "127.0.0.1:50051"
+
+# OSS 对象存储配置（头像上传）
+oss:
+  type: local
+  endpoint: ""
+  access-key-id: ""
+  access-key-secret: ""
+  bucket-name: ""
+  bucket-url: ""
+  base-path: "avatars/"

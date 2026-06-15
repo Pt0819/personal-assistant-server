@@ -48,3 +48,12 @@ wechat:
 
 grpc:
   agent-addr: "agent-server:50051"
+
+oss:
+  type: local
+  endpoint: ""
+  access-key-id: ""
+  access-key-secret: ""
+  bucket-name: ""
+  bucket-url: ""
+  base-path: "avatars/"
