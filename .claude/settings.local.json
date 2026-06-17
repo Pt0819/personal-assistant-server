@@ -12,7 +12,8 @@
       "Bash(head -30 \"$\\(go env GOMODCACHE\\)/golang.org/x/image@v0.42.0/font/gofont/gobold/gobold.go\")",
       "Bash(ls \"$\\(go env GOMODCACHE\\)/golang.org/x/image@v0.42.0/font/gofont/gobold/\")",
       "Bash(ls \"$\\(go env GOMODCACHE\\)/golang.org/x/image@v0.42.0/font/opentype/\")",
-      "Bash(grep -n 'func ' __CMDSUB_OUTPUT__/golang.org/x/image@v0.42.0/font/font.go)"
+      "Bash(grep -n 'func ' __CMDSUB_OUTPUT__/golang.org/x/image@v0.42.0/font/font.go)",
+      "Bash(go run *)"
     ]
   }
 }

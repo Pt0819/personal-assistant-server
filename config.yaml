@@ -35,7 +35,7 @@ system:
   addr: 8888
   router-prefix: ""
   use-redis: false
-  disable-auto-migrate: false
+  disable-auto-migrate: true
 
 # MySQL 配置
 mysql:
@@ -44,7 +44,7 @@ mysql:
   config: charset=utf8mb4&parseTime=True&loc=Local
   db-name: personal_assistant
   username: root
-  password: ""
+  password: "123456"
   max-idle-conns: 10
   max-open-conns: 100
 
