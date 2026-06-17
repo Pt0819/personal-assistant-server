@@ -2,6 +2,8 @@ package utils
 
 import (
 	"crypto/md5"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -28,4 +30,20 @@ func MD5V(str []byte, b ...byte) string {
 	h := md5.New()
 	h.Write(str)
 	return hex.EncodeToString(h.Sum(b))
+}
+
+// GenerateRefreshToken generates a cryptographically random refresh token.
+// Returns 64 hex characters (32 bytes = 256 bits of entropy).
+func GenerateRefreshToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// HashRefreshToken returns the SHA-256 hex-encoded hash of a raw refresh token.
+func HashRefreshToken(raw string) string {
+	h := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(h[:])
 }

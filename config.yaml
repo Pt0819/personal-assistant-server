@@ -3,9 +3,10 @@
 # JWT 配置
 jwt:
   signing-key: "dev-signing-key-change-in-production"
-  expires-time: 7d
-  buffer-time: 1d
+  expires-time: 2h
+  buffer-time: 5m
   issuer: "personal-assistant"
+  refresh-expires-time: 720h
 
 # 日志配置
 zap:
@@ -51,10 +52,16 @@ mysql:
 wechat:
   app-id: ""
   app-secret: ""
+  access-token-cache-ttl: 1h50m
 
 # Agent Server gRPC 配置
 grpc:
   agent-addr: "127.0.0.1:50051"
+
+# 安全配置 (生产环境必须通过环境变量注入: GVA_SECURITY_ENCRYPTION_KEY)
+security:
+  encryption-key: "0000000000000000000000000000000000000000000000000000000000000001"  # 仅开发使用,生产务必替换为随机64位hex
+  max-devices: 3
 
 # OSS 对象存储配置（头像上传）
 oss:

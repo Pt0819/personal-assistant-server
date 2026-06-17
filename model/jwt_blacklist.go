@@ -1,10 +1,14 @@
 package model
 
-import "personal-assistant-server/global"
+import (
+	"time"
+)
 
 type JwtBlacklist struct {
-	global.GVA_MODEL
-	Jwt string `json:"jwt" gorm:"type:text;comment:黑名单Token"`
+	ID        uint      `gorm:"primarykey"`
+	Jwt       string    `gorm:"type:varchar(36);comment:JWT ID(jti),UUID格式,36字符"`
+	ExpiresAt time.Time `gorm:"comment:黑名单过期时间(=JWT原过期时间)"`
+	CreatedAt time.Time
 }
 
 func (JwtBlacklist) TableName() string {

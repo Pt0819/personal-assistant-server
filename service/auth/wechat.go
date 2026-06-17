@@ -14,6 +14,9 @@ import (
 	"personal-assistant-server/model"
 	"personal-assistant-server/utils"
 	"personal-assistant-server/utils/avatar"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type AuthService struct{}
@@ -29,15 +32,19 @@ type WechatSessionResponse struct {
 
 // LoginRequest 登录请求参数
 type LoginRequest struct {
-	Code      string `json:"code"`
-	Nickname  string `json:"nickname"`
-	AvatarURL string `json:"avatar_url"`
+	Code       string `json:"code"`
+	Nickname   string `json:"nickname"`
+	AvatarURL  string `json:"avatar_url"`
+	DeviceID   string `json:"device_id"`
+	DeviceInfo string `json:"device_info"`
 }
 
 // LoginResponse 登录响应
 type LoginResponse struct {
-	Token string      `json:"token"`
-	User  *model.User `json:"user"`
+	AccessToken  string      `json:"access_token"`
+	RefreshToken string      `json:"refresh_token"`
+	ExpiresIn    int64       `json:"expires_in"`
+	User         *model.User `json:"user"`
 }
 
 // Login 微信小程序登录（无昵称/头像的简单模式）
@@ -84,17 +91,84 @@ func (s *AuthService) LoginWithProfile(ctx context.Context, req LoginRequest) (*
 		})
 	}
 
-	// 4. 生成 JWT
+	// 4. 加密 session_key
+	var encryptedSessionKey []byte
+	if len(global.GVA_ENCRYPTION_KEY) == 32 {
+		encryptedSessionKey, err = utils.EncryptAES256GCM([]byte(sessionResp.SessionKey), global.GVA_ENCRYPTION_KEY)
+		if err != nil {
+			global.GVA_LOG.Error("加密session_key失败: " + err.Error())
+		}
+	}
+
+	// 5. 处理 device_id
+	deviceID := req.DeviceID
+	if deviceID == "" {
+		deviceID = fmt.Sprintf("unknown_%s", uuid.New().String()[:16])
+	}
+
+	// 6. 生成 refresh_token
+	rawRefreshToken, err := utils.GenerateRefreshToken()
+	if err != nil {
+		return nil, fmt.Errorf("生成refresh_token失败: %w", err)
+	}
+	refreshTokenHash := utils.HashRefreshToken(rawRefreshToken)
+
+	// 7. 计算过期时间
+	accessTTL, _ := utils.ParseDuration(global.GVA_CONFIG.JWT.ExpiresTime)
+	refreshTTL, _ := utils.ParseDuration(global.GVA_CONFIG.JWT.RefreshExpiresTime)
+	now := time.Now()
+	accessExpiresAt := now.Add(accessTTL)
+	refreshExpiresAt := now.Add(refreshTTL)
+
+	// 8. 事务：多设备管理 + 创建/更新会话
+	tx := global.GVA_DB.Begin()
+
+	var currentCount int64
+	tx.Model(&model.UserSession{}).Where("user_id = ?", user.ID).Count(&currentCount)
+
+	maxDevices := global.GVA_CONFIG.Security.MaxDevices
+	if maxDevices <= 0 {
+		maxDevices = 3
+	}
+	if currentCount >= int64(maxDevices) {
+		tx.Where("user_id = ?", user.ID).
+			Order("last_used_at ASC").
+			Limit(int(currentCount - int64(maxDevices) + 1)).
+			Delete(&model.UserSession{})
+	}
+
+	session := model.UserSession{
+		UserID:              user.ID,
+		RefreshTokenHash:    refreshTokenHash,
+		DeviceID:            deviceID,
+		DeviceInfo:          req.DeviceInfo,
+		SessionKeyEncrypted: encryptedSessionKey,
+		AccessExpiresAt:     accessExpiresAt,
+		RefreshExpiresAt:    refreshExpiresAt,
+		LastUsedAt:          now,
+	}
+	if err := tx.Where("user_id = ? AND device_id = ?", user.ID, deviceID).
+		Assign(session).
+		FirstOrCreate(&session).Error; err != nil {
+		tx.Rollback()
+		return nil, fmt.Errorf("创建会话失败: %w", err)
+	}
+
+	tx.Commit()
+
+	// 9. 生成 JWT access_token
 	j := utils.NewJWT()
-	claims := j.CreateClaims(user.ID, user.OpenID)
-	token, err := j.CreateToken(claims)
+	claims := j.CreateClaims(user.ID, user.OpenID, deviceID)
+	accessToken, err := j.CreateToken(claims)
 	if err != nil {
 		return nil, fmt.Errorf("生成token失败: %w", err)
 	}
 
 	return &LoginResponse{
-		Token: token,
-		User:  user,
+		AccessToken:  accessToken,
+		RefreshToken: rawRefreshToken,
+		ExpiresIn:    int64(accessTTL.Seconds()),
+		User:         user,
 	}, nil
 }
 
@@ -181,4 +255,78 @@ func code2session(ctx context.Context, code string) (*WechatSessionResponse, err
 	}
 
 	return &sessionResp, nil
+}
+
+// RefreshTokenRequest 刷新 token 请求
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// RefreshTokenResponse 刷新 token 响应
+type RefreshTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int64  `json:"expires_in"`
+}
+
+// RefreshToken 用 refresh token 换取新的 access token
+func (s *AuthService) RefreshToken(ctx context.Context, req RefreshTokenRequest) (*RefreshTokenResponse, error) {
+	if req.RefreshToken == "" {
+		return nil, errors.New("缺少refresh_token参数")
+	}
+
+	// 1. 计算 hash 并查找会话
+	incomingHash := utils.HashRefreshToken(req.RefreshToken)
+	var session model.UserSession
+	if err := global.GVA_DB.Where("refresh_token_hash = ?", incomingHash).First(&session).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("refresh_token无效或已登出")
+		}
+		return nil, fmt.Errorf("查询会话失败: %w", err)
+	}
+
+	// 2. 检查过期
+	if time.Now().After(session.RefreshExpiresAt) {
+		return nil, fmt.Errorf("refresh_token已过期,请重新登录")
+	}
+
+	// 3. 生成新 access_token
+	var user model.User
+	if err := global.GVA_DB.First(&user, session.UserID).Error; err != nil {
+		return nil, fmt.Errorf("用户不存在")
+	}
+
+	j := utils.NewJWT()
+	claims := j.CreateClaims(user.ID, user.OpenID, session.DeviceID)
+	accessToken, err := j.CreateToken(claims)
+	if err != nil {
+		return nil, fmt.Errorf("生成token失败: %w", err)
+	}
+
+	// 4. 更新会话
+	accessTTL, _ := utils.ParseDuration(global.GVA_CONFIG.JWT.ExpiresTime)
+	global.GVA_DB.Model(&session).Updates(map[string]interface{}{
+		"access_expires_at": time.Now().Add(accessTTL),
+		"last_used_at":      time.Now(),
+	})
+
+	return &RefreshTokenResponse{
+		AccessToken: accessToken,
+		ExpiresIn:   int64(accessTTL.Seconds()),
+	}, nil
+}
+
+// Logout 登出：黑名单 access token + 删除 refresh session
+func (s *AuthService) Logout(ctx context.Context, userID uint, deviceID string, jti string) error {
+	// 1. 黑名单 access token (存 jti)
+	blacklist := model.JwtBlacklist{
+		Jwt:       jti,
+		ExpiresAt: time.Now().Add(2 * time.Hour),
+	}
+	global.GVA_DB.Create(&blacklist)
+
+	// 2. 删除 user_session
+	global.GVA_DB.Where("user_id = ? AND device_id = ?", userID, deviceID).
+		Delete(&model.UserSession{})
+
+	return nil
 }

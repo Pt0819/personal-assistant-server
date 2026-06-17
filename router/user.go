@@ -12,5 +12,8 @@ func InitUserRouter(privateGroup *gin.RouterGroup) {
 	{
 		userRouter.GET("/profile", userApi.GetProfile)
 		userRouter.PUT("/profile", userApi.UpdateProfile)
+		userRouter.PUT("/phone", userApi.BindPhone)
+		userRouter.GET("/sessions", userApi.GetSessions)
+		userRouter.DELETE("/sessions/:device_id", userApi.KickSession)
 	}
 }

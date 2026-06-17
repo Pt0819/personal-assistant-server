@@ -28,6 +28,7 @@ func RegisterTables() {
 		&model.Message{},
 		&model.PushSubscription{},
 		&model.JwtBlacklist{},
+		&model.UserSession{},
 	)
 	if err != nil {
 		global.GVA_LOG.Error("register table failed", zap.Error(err))

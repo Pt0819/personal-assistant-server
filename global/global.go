@@ -18,5 +18,6 @@ var (
 	GVA_VP      *viper.Viper
 	GVA_LOG     *zap.Logger
 	GVA_Timer   timer.Timer = timer.NewTimerTask()
-	GVA_STORAGE storage.FileStorage
+	GVA_STORAGE       storage.FileStorage
+	GVA_ENCRYPTION_KEY []byte // AES-256 密钥 (32 bytes,从 hex 解析)
 )

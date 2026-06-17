@@ -2,7 +2,9 @@ package initialize
 
 import (
 	"net/http"
+	"time"
 
+	v1 "personal-assistant-server/api/v1"
 	"personal-assistant-server/global"
 	"personal-assistant-server/middleware"
 	"personal-assistant-server/router"
@@ -28,6 +30,19 @@ func Routers() *gin.Engine {
 
 	// 公开路由（无需鉴权）
 	router.InitAuthRouter(PublicGroup)
+
+	// 创建限速器: 每分钟最多 5 次（auth 端点）
+	authRateLimiter := middleware.NewRateLimiter(5, time.Minute)
+	// 对登录和刷新端点额外应用限速
+	PublicGroup.POST("/auth/wechat/login", authRateLimiter.RateLimit(), v1.ApiGroupApp.AuthApi.Login)
+	PublicGroup.POST("/auth/refresh", authRateLimiter.RateLimit(), v1.ApiGroupApp.AuthApi.RefreshToken)
+
+	// 登出路由 — 使用宽松 JWT 中间件（接受过期token以允许随时登出）
+	logoutGroup := Router.Group(global.GVA_CONFIG.System.RouterPrefix)
+	logoutGroup.Use(middleware.JWTAuthLax())
+	{
+		logoutGroup.POST("/auth/logout", v1.ApiGroupApp.AuthApi.Logout)
+	}
 
 	// 私有路由（需要 JWT 鉴权）
 	PrivateGroup := Router.Group(global.GVA_CONFIG.System.RouterPrefix)

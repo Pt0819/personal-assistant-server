@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"personal-assistant-server/global"
+	"personal-assistant-server/model"
 	"personal-assistant-server/model/common/response"
 	"personal-assistant-server/utils"
 
@@ -37,7 +38,22 @@ func JWTAuth() gin.HandlerFunc {
 			return
 		}
 
+		// 黑名单检查
+		if claims.ID != "" {
+			var count int64
+			global.GVA_DB.Model(&model.JwtBlacklist{}).
+				Where("jwt = ?", claims.ID).Count(&count)
+			if count > 0 {
+				response.NoAuth("token已被注销", c)
+				utils.ClearToken(c)
+				c.Abort()
+				return
+			}
+		}
+
 		c.Set("claims", claims)
+		c.Set("user_id", claims.UserID)
+		c.Set("device_id", claims.DeviceID)
 
 		// Auto-refresh token if close to expiry
 		if claims.ExpiresAt.Unix()-time.Now().Unix() < claims.BufferTime {

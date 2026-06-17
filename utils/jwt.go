@@ -2,17 +2,20 @@ package utils
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"personal-assistant-server/global"
 
-	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // WechatClaims JWT claims for WeChat mini-program users
 type WechatClaims struct {
 	UserID     uint   `json:"user_id"`
 	OpenID     string `json:"open_id"`
+	DeviceID   string `json:"device_id"`    // 设备/会话标识
 	BufferTime int64  `json:"buffer_time"`
 	jwt.RegisteredClaims
 }
@@ -37,18 +40,22 @@ func NewJWT() *JWT {
 }
 
 // CreateClaims creates WechatClaims with configured expiration
-func (j *JWT) CreateClaims(userID uint, openID string) WechatClaims {
+func (j *JWT) CreateClaims(userID uint, openID string, deviceID string) WechatClaims {
 	bf, _ := ParseDuration(global.GVA_CONFIG.JWT.BufferTime)
 	ep, _ := ParseDuration(global.GVA_CONFIG.JWT.ExpiresTime)
 	claims := WechatClaims{
 		UserID:     userID,
 		OpenID:     openID,
+		DeviceID:   deviceID,
 		BufferTime: int64(bf / time.Second),
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.New().String(),                       // jti — 用于黑名单精确匹配
 			Audience:  jwt.ClaimStrings{"PA"},                    // Personal Assistant
 			NotBefore: jwt.NewNumericDate(time.Now().Add(-1000)), // 签名生效时间
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ep)),    // 过期时间
 			Issuer:    global.GVA_CONFIG.JWT.Issuer,              // 签发者
+			IssuedAt:  jwt.NewNumericDate(time.Now()),            // 签发时间
+			Subject:   fmt.Sprintf("%d", userID),                 // 用户标识
 		},
 	}
 	// 缓冲时间用于token自动刷新
@@ -88,4 +95,30 @@ func (j *JWT) ParseToken(tokenString string) (*WechatClaims, error) {
 		}
 	}
 	return nil, TokenValid
+}
+
+// ParseTokenLax parses a JWT without validating exp/nbf — used for logout endpoint.
+func (j *JWT) ParseTokenLax(tokenString string) (*WechatClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &WechatClaims{},
+		func(token *jwt.Token) (interface{}, error) {
+			return j.SigningKey, nil
+		},
+		jwt.WithoutClaimsValidation(),
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, jwt.ErrTokenMalformed):
+			return nil, TokenMalformed
+		case errors.Is(err, jwt.ErrTokenSignatureInvalid):
+			return nil, TokenSignatureInvalid
+		default:
+			return nil, TokenInvalid
+		}
+	}
+	if token != nil {
+		if claims, ok := token.Claims.(*WechatClaims); ok {
+			return claims, nil
+		}
+	}
+	return nil, TokenInvalid
 }

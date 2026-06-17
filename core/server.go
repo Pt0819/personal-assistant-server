@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -30,6 +31,13 @@ func RunServer() {
 			zap.L().Info("OSS存储初始化成功, 类型: " + global.GVA_CONFIG.Oss.Type)
 		}
 	}
+
+	// 解析 AES-256 加密密钥
+	key, err := hex.DecodeString(global.GVA_CONFIG.Security.EncryptionKey)
+	if err != nil || len(key) != 32 {
+		zap.L().Fatal("security.encryption-key 必须是 64 位 hex 字符串 (32 bytes)")
+	}
+	global.GVA_ENCRYPTION_KEY = key
 
 	Router := initialize.Routers()
 

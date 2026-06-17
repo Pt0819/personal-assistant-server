@@ -49,3 +49,52 @@ func (a *UserApi) UpdateProfile(c *gin.Context) {
 	}
 	response.OkWithData(u, c)
 }
+
+// BindPhone 绑定/更新手机号
+func (a *UserApi) BindPhone(c *gin.Context) {
+	userID := utils.GetUserID(c)
+
+	var req user.BindPhoneRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMessage("code不能为空", c)
+		return
+	}
+
+	resp, err := service.ServiceGroupApp.UserService.BindPhone(c.Request.Context(), userID, &req)
+	if err != nil {
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+
+	response.OkWithDetailed(resp, "手机号绑定成功", c)
+}
+
+// GetSessions 获取用户的所有活跃会话
+func (a *UserApi) GetSessions(c *gin.Context) {
+	userID := utils.GetUserID(c)
+	deviceID, _ := c.Get("device_id")
+	currentDeviceID, _ := deviceID.(string)
+
+	resp, err := service.ServiceGroupApp.UserService.GetSessions(c.Request.Context(), userID, currentDeviceID)
+	if err != nil {
+		response.FailWithMessage("获取设备列表失败: "+err.Error(), c)
+		return
+	}
+
+	response.OkWithData(resp, c)
+}
+
+// KickSession 踢出指定设备
+func (a *UserApi) KickSession(c *gin.Context) {
+	userID := utils.GetUserID(c)
+	deviceID, _ := c.Get("device_id")
+	currentDeviceID, _ := deviceID.(string)
+	targetDeviceID := c.Param("device_id")
+
+	if err := service.ServiceGroupApp.UserService.KickSession(c.Request.Context(), userID, targetDeviceID, currentDeviceID); err != nil {
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+
+	response.OkWithMessage("设备已下线", c)
+}
