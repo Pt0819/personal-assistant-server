@@ -592,3 +592,68 @@ func (s *AuthService) oauthAccessToken(ctx context.Context, code string) (*model
 	}
 	return &user, nil
 }
+
+// DevLogin 开发环境免扫码登录，仅 system.env == "local" 时可用
+func (s *AuthService) DevLogin(ctx context.Context) (*LoginResponse, error) {
+	if global.GVA_CONFIG.System.Env != "local" {
+		return nil, fmt.Errorf("开发登录仅在 local 环境可用")
+	}
+
+	devOpenID := "dev_user_001"
+	var user model.User
+	err := global.GVA_DB.Where("openid = ?", devOpenID).First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			user = model.User{
+				OpenID:    devOpenID,
+				Nickname:  "Dev",
+				AvatarURL: "",
+			}
+			if err := global.GVA_DB.Create(&user).Error; err != nil {
+				return nil, fmt.Errorf("创建开发用户失败: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("查询开发用户失败: %w", err)
+		}
+	}
+
+	return s.buildLoginResponse(&user, "dev_device_001", "Dev Browser")
+}
+
+// buildLoginResponse 构建双 token 登录响应
+func (s *AuthService) buildLoginResponse(user *model.User, deviceID, deviceInfo string) (*LoginResponse, error) {
+	rawRefreshToken, err := utils.GenerateRefreshToken()
+	if err != nil {
+		return nil, fmt.Errorf("生成refresh_token失败: %w", err)
+	}
+	refreshTokenHash := utils.HashRefreshToken(rawRefreshToken)
+
+	accessTTL, _ := utils.ParseDuration(global.GVA_CONFIG.JWT.ExpiresTime)
+	refreshTTL, _ := utils.ParseDuration(global.GVA_CONFIG.JWT.RefreshExpiresTime)
+	now := time.Now()
+
+	session := model.UserSession{
+		UserID:           user.ID,
+		RefreshTokenHash: refreshTokenHash,
+		DeviceID:         deviceID,
+		DeviceInfo:       deviceInfo,
+		AccessExpiresAt:  now.Add(accessTTL),
+		RefreshExpiresAt: now.Add(refreshTTL),
+		LastUsedAt:       now,
+	}
+	global.GVA_DB.Create(&session)
+
+	j := utils.NewJWT()
+	claims := j.CreateClaims(user.ID, user.OpenID, deviceID)
+	accessToken, err := j.CreateToken(claims)
+	if err != nil {
+		return nil, fmt.Errorf("生成token失败: %w", err)
+	}
+
+	return &LoginResponse{
+		AccessToken:  accessToken,
+		RefreshToken: rawRefreshToken,
+		ExpiresIn:    int64(accessTTL.Seconds()),
+		User:         user,
+	}, nil
+}

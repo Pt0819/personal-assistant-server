@@ -123,3 +123,14 @@ func (a *AuthApi) WebStatus(c *gin.Context) {
 	}
 	response.OkWithData(resp, c)
 }
+
+// DevLogin 开发环境免扫码登录
+// @Router /api/v1/auth/dev/login [post]
+func (a *AuthApi) DevLogin(c *gin.Context) {
+	resp, err := service.ServiceGroupApp.AuthService.DevLogin(c.Request.Context())
+	if err != nil {
+		c.JSON(403, response.Response{Code: 7, Msg: err.Error()})
+		return
+	}
+	response.OkWithData(resp, c)
+}

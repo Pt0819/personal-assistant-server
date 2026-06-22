@@ -35,6 +35,8 @@ func Routers() *gin.Engine {
 	PublicGroup.GET("/auth/wechat/web/qrcode", v1.ApiGroupApp.AuthApi.WebQrcode)
 	PublicGroup.GET("/auth/wechat/web/callback", v1.ApiGroupApp.AuthApi.WebCallback)
 	PublicGroup.GET("/auth/wechat/web/status", v1.ApiGroupApp.AuthApi.WebStatus)
+	// 开发环境免扫码登录
+	PublicGroup.POST("/auth/dev/login", v1.ApiGroupApp.AuthApi.DevLogin)
 
 	// 创建限速器: 每分钟最多 5 次（auth 端点）
 	authRateLimiter := middleware.NewRateLimiter(5, time.Minute)
