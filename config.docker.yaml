@@ -47,6 +47,9 @@ wechat:
   app-id: ""
   app-secret: ""
   access-token-cache-ttl: 1h50m
+  open-platform-app-id: ""
+  open-platform-app-secret: ""
+  web-redirect-uri: "https://assistant.example.com/api/v1/auth/wechat/web/callback"
 
 grpc:
   agent-addr: "agent-server:50051"
