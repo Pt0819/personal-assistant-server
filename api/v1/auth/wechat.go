@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"personal-assistant-server/model/common/response"
@@ -76,4 +78,48 @@ func (a *AuthApi) Logout(c *gin.Context) {
 	}
 
 	response.OkWithMessage("已登出", c)
+}
+
+// WebQrcode 获取网页登录二维码
+// @Router /api/v1/auth/wechat/web/qrcode [get]
+func (a *AuthApi) WebQrcode(c *gin.Context) {
+	var req auth.WebQrcodeRequest
+	resp, err := service.ServiceGroupApp.AuthService.WebQrcode(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(500, response.Response{Code: 7, Msg: "获取二维码失败: " + err.Error()})
+		return
+	}
+	response.OkWithData(resp, c)
+}
+
+// WebCallback 微信 OAuth 回调（302 重定向到 SPA）
+// @Router /api/v1/auth/wechat/web/callback [get]
+func (a *AuthApi) WebCallback(c *gin.Context) {
+	code := c.Query("code")
+	state := c.Query("state")
+
+	if code == "" || state == "" {
+		response.FailWithMessage("缺少code或state参数", c)
+		return
+	}
+
+	redirectURL, err := service.ServiceGroupApp.AuthService.WebCallback(c.Request.Context(), code, state)
+	if err != nil {
+		c.JSON(400, response.Response{Code: 7, Msg: "登录回调失败: " + err.Error()})
+		return
+	}
+
+	c.Redirect(http.StatusFound, redirectURL)
+}
+
+// WebStatus 轮询网页登录状态
+// @Router /api/v1/auth/wechat/web/status [get]
+func (a *AuthApi) WebStatus(c *gin.Context) {
+	tempToken := c.Query("temp_token")
+	resp, err := service.ServiceGroupApp.AuthService.WebStatus(c.Request.Context(), tempToken)
+	if err != nil {
+		c.JSON(410, response.Response{Code: 7, Msg: err.Error()})
+		return
+	}
+	response.OkWithData(resp, c)
 }
