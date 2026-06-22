@@ -3,6 +3,8 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -329,4 +331,264 @@ func (s *AuthService) Logout(ctx context.Context, userID uint, deviceID string, 
 		Delete(&model.UserSession{})
 
 	return nil
+}
+
+// WebQrcodeRequest 网页端获取二维码请求（空 body）
+type WebQrcodeRequest struct{}
+
+// WebQrcodeResponse 网页端获取二维码响应
+type WebQrcodeResponse struct {
+	QrcodeURL string `json:"qrcode_url"`
+	TempToken string `json:"temp_token"`
+	ExpiresIn int    `json:"expires_in"`
+}
+
+// WebStatusResponse 网页端轮询登录状态响应
+type WebStatusResponse struct {
+	Status      string      `json:"status"`
+	AccessToken string      `json:"access_token,omitempty"`
+	RefreshToken string     `json:"refresh_token,omitempty"`
+	ExpiresIn   int64       `json:"expires_in,omitempty"`
+	User        *model.User `json:"user,omitempty"`
+	Nickname    string      `json:"nickname,omitempty"`
+	AvatarURL   string      `json:"avatar_url,omitempty"`
+}
+
+// WebQrcode 生成网页端微信扫码登录二维码
+func (s *AuthService) WebQrcode(ctx context.Context, req WebQrcodeRequest) (*WebQrcodeResponse, error) {
+	// 1. 生成 state（防 CSRF）和 temp_token（轮询标识）
+	state, err := generateState()
+	if err != nil {
+		return nil, fmt.Errorf("生成state失败: %w", err)
+	}
+	tempToken, err := generateTempToken()
+	if err != nil {
+		return nil, fmt.Errorf("生成temp_token失败: %w", err)
+	}
+
+	// 2. 存储 state → temp_token 到 Redis（TTL 300s）
+	if global.GVA_REDIS != nil {
+		key := "wechat_oauth:" + state
+		val := fmt.Sprintf(`{"temp_token":"%s","created_at":%d}`, tempToken, time.Now().Unix())
+		if err := global.GVA_REDIS.Set(ctx, key, val, 300*time.Second).Err(); err != nil {
+			return nil, fmt.Errorf("存储state失败: %w", err)
+		}
+	}
+
+	// 3. 构建二维码 URL
+	qrcodeURL := fmt.Sprintf(
+		"https://open.weixin.qq.com/connect/qrconnect?appid=%s&redirect_uri=%s&response_type=code&scope=snsapi_login&state=%s",
+		global.GVA_CONFIG.Wechat.OpenPlatformAppID,
+		global.GVA_CONFIG.Wechat.WebRedirectURI,
+		state,
+	)
+
+	return &WebQrcodeResponse{
+		QrcodeURL: qrcodeURL,
+		TempToken: tempToken,
+		ExpiresIn: 300,
+	}, nil
+}
+
+// WebCallback 处理微信 OAuth 回调，验证 state，用 code 换取用户信息，生成 token，结果存入 Redis
+// 返回前端重定向 URL
+func (s *AuthService) WebCallback(ctx context.Context, code, state string) (string, error) {
+	// 1. 从 Redis 验证 state
+	if global.GVA_REDIS == nil {
+		return "", fmt.Errorf("Redis未初始化")
+	}
+	key := "wechat_oauth:" + state
+	val, err := global.GVA_REDIS.Get(ctx, key).Result()
+	if err != nil {
+		return "", fmt.Errorf("state无效或已过期")
+	}
+	var data struct {
+		TempToken string `json:"temp_token"`
+		CreatedAt int64  `json:"created_at"`
+	}
+	if err := json.Unmarshal([]byte(val), &data); err != nil {
+		return "", fmt.Errorf("state数据损坏")
+	}
+	// 删除一次性 state
+	global.GVA_REDIS.Del(ctx, key)
+
+	// 2. 用 code 换取用户信息
+	user, err := s.oauthAccessToken(ctx, code)
+	if err != nil {
+		return "", fmt.Errorf("获取用户信息失败: %w", err)
+	}
+
+	// 3. 生成双 token
+	deviceID := fmt.Sprintf("web_%s", uuid.New().String()[:16])
+	rawRefreshToken, err := utils.GenerateRefreshToken()
+	if err != nil {
+		return "", fmt.Errorf("生成refresh_token失败: %w", err)
+	}
+	refreshTokenHash := utils.HashRefreshToken(rawRefreshToken)
+
+	accessTTL, _ := utils.ParseDuration(global.GVA_CONFIG.JWT.ExpiresTime)
+	refreshTTL, _ := utils.ParseDuration(global.GVA_CONFIG.JWT.RefreshExpiresTime)
+	now := time.Now()
+
+	// 4. 创建会话（设备管理 — 单条插入，网页端不限制设备数）
+	session := model.UserSession{
+		UserID:           user.ID,
+		RefreshTokenHash: refreshTokenHash,
+		DeviceID:         deviceID,
+		DeviceInfo:       "Web 网页端",
+		AccessExpiresAt:  now.Add(accessTTL),
+		RefreshExpiresAt: now.Add(refreshTTL),
+		LastUsedAt:       now,
+	}
+	global.GVA_DB.Create(&session)
+
+	// 5. 生成 JWT
+	j := utils.NewJWT()
+	claims := j.CreateClaims(user.ID, user.OpenID, deviceID)
+	accessToken, err := j.CreateToken(claims)
+	if err != nil {
+		return "", fmt.Errorf("生成token失败: %w", err)
+	}
+
+	// 6. 存储 temp_token → 登录结果到 Redis（TTL 60s 供轮询）
+	loginData := fmt.Sprintf(
+		`{"status":"confirmed","access_token":"%s","refresh_token":"%s","expires_in":%d,"user":{"id":%d,"nickname":"%s","avatar_url":"%s","openid":"%s"}}`,
+		accessToken, rawRefreshToken, int64(accessTTL.Seconds()),
+		user.ID, user.Nickname, user.AvatarURL, user.OpenID,
+	)
+	global.GVA_REDIS.Set(ctx, "wechat_login:"+data.TempToken, loginData, 60*time.Second)
+
+	// 7. 返回重定向 URL
+	return fmt.Sprintf("/login?temp_token=%s", data.TempToken), nil
+}
+
+// WebStatus 轮询登录状态
+func (s *AuthService) WebStatus(ctx context.Context, tempToken string) (*WebStatusResponse, error) {
+	if tempToken == "" {
+		return nil, fmt.Errorf("缺少temp_token参数")
+	}
+	if global.GVA_REDIS == nil {
+		return &WebStatusResponse{Status: "pending"}, nil
+	}
+	val, err := global.GVA_REDIS.Get(ctx, "wechat_login:"+tempToken).Result()
+	if err != nil {
+		return &WebStatusResponse{Status: "pending"}, nil
+	}
+	var data struct {
+		Status       string      `json:"status"`
+		AccessToken  string      `json:"access_token"`
+		RefreshToken string      `json:"refresh_token"`
+		ExpiresIn    int64       `json:"expires_in"`
+		User         *model.User `json:"user"`
+	}
+	if err := json.Unmarshal([]byte(val), &data); err != nil {
+		return &WebStatusResponse{Status: "pending"}, nil
+	}
+	return &WebStatusResponse{
+		Status:       data.Status,
+		AccessToken:  data.AccessToken,
+		RefreshToken: data.RefreshToken,
+		ExpiresIn:    data.ExpiresIn,
+		User:         data.User,
+	}, nil
+}
+
+// generateState 生成随机 state（防 CSRF）
+func generateState() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// generateTempToken 生成临时 token（轮询标识）
+func generateTempToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// oauthAccessToken 用 code 换取微信用户信息（开放平台 OAuth）
+func (s *AuthService) oauthAccessToken(ctx context.Context, code string) (*model.User, error) {
+	// 1. 用 code 换取 access_token + openid
+	tokenURL := fmt.Sprintf(
+		"https://api.weixin.qq.com/sns/oauth2/access_token?appid=%s&secret=%s&code=%s&grant_type=authorization_code",
+		global.GVA_CONFIG.Wechat.OpenPlatformAppID,
+		global.GVA_CONFIG.Wechat.OpenPlatformAppSecret,
+		code,
+	)
+	resp, err := http.Get(tokenURL)
+	if err != nil {
+		return nil, fmt.Errorf("请求微信接口失败: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+		OpenID      string `json:"openid"`
+		UnionID     string `json:"unionid"`
+		ErrCode     int    `json:"errcode"`
+		ErrMsg      string `json:"errmsg"`
+	}
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, fmt.Errorf("解析微信响应失败: %w", err)
+	}
+	if tokenResp.ErrCode != 0 {
+		return nil, fmt.Errorf("微信返回错误: %d - %s", tokenResp.ErrCode, tokenResp.ErrMsg)
+	}
+
+	// 2. 获取用户信息（昵称、头像）
+	userInfoURL := fmt.Sprintf(
+		"https://api.weixin.qq.com/sns/userinfo?access_token=%s&openid=%s",
+		tokenResp.AccessToken, tokenResp.OpenID,
+	)
+	uiResp, err := http.Get(userInfoURL)
+	if err != nil {
+		return nil, fmt.Errorf("获取用户信息失败: %w", err)
+	}
+	defer uiResp.Body.Close()
+	uiBody, _ := io.ReadAll(uiResp.Body)
+	var userInfo struct {
+		OpenID     string `json:"openid"`
+		Nickname   string `json:"nickname"`
+		HeadImgURL string `json:"headimgurl"`
+		UnionID    string `json:"unionid"`
+		ErrCode    int    `json:"errcode"`
+	}
+	if err := json.Unmarshal(uiBody, &userInfo); err != nil {
+		return nil, fmt.Errorf("解析用户信息失败: %w", err)
+	}
+	if userInfo.ErrCode != 0 {
+		return nil, fmt.Errorf("获取用户信息错误: %d", userInfo.ErrCode)
+	}
+
+	// 3. 查找或创建用户
+	var user model.User
+	err = global.GVA_DB.Where("openid = ?", userInfo.OpenID).First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			user = model.User{
+				OpenID:    userInfo.OpenID,
+				UnionID:   userInfo.UnionID,
+				Nickname:  userInfo.Nickname,
+				AvatarURL: userInfo.HeadImgURL,
+			}
+			if err := global.GVA_DB.Create(&user).Error; err != nil {
+				return nil, fmt.Errorf("创建用户失败: %w", err)
+			}
+			return &user, nil
+		}
+		return nil, fmt.Errorf("查询用户失败: %w", err)
+	}
+	// 补充 unionid 和头像
+	if userInfo.UnionID != "" && user.UnionID == "" {
+		global.GVA_DB.Model(&user).Updates(map[string]interface{}{
+			"unionid":    userInfo.UnionID,
+			"avatar_url": userInfo.HeadImgURL,
+		})
+	}
+	return &user, nil
 }
