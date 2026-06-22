@@ -22,5 +22,6 @@ func initializeSystem() {
 	initialize.Timer()
 	if global.GVA_DB != nil {
 		initialize.RegisterTables()
+		initialize.ConfigFromDBFallback()
 	}
 }
