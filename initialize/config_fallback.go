@@ -14,6 +14,12 @@ func ConfigFromDBFallback() {
 		return
 	}
 
+	// 确保 system_configs 表存在（即使全局 auto-migrate 关闭）
+	if err := global.GVA_DB.AutoMigrate(&model.SystemConfig{}); err != nil {
+		global.GVA_LOG.Warn("创建system_configs表失败: " + err.Error())
+		return
+	}
+
 	fallbacks := map[string]*string{
 		"wechat.app_id":                   &global.GVA_CONFIG.Wechat.AppID,
 		"wechat.app_secret":               &global.GVA_CONFIG.Wechat.AppSecret,

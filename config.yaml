@@ -53,8 +53,8 @@ wechat:
   app-id: ""
   app-secret: ""
   access-token-cache-ttl: 1h50m
-  open-platform-app-id: ""
-  open-platform-app-secret: ""
+  open-platform-app-id: "wxafa4d4ecf19d8898"
+  open-platform-app-secret: "665accc347d50cf0bc300aa891ea11a4"
   web-redirect-uri: "http://localhost:8888/api/v1/auth/wechat/web/callback"
 
 # Agent Server gRPC 配置
