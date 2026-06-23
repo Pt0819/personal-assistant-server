@@ -466,7 +466,7 @@ func (s *AuthService) WebCallback(ctx context.Context, code, state string) (stri
 	loginData := fmt.Sprintf(
 		`{"status":"confirmed","access_token":"%s","refresh_token":"%s","expires_in":%d,"user":{"id":%d,"nickname":"%s","avatar_url":"%s","openid":"%s"}}`,
 		accessToken, rawRefreshToken, int64(accessTTL.Seconds()),
-		user.ID, user.Nickname, user.AvatarURL, user.OpenID,
+		user.ID, user.Nickname, user.AvatarURL, openID,
 	)
 	global.GVA_REDIS.Set(ctx, "wechat_login:"+data.TempToken, loginData, 60*time.Second)
 
