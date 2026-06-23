@@ -13,6 +13,7 @@ var ServiceGroupApp = new(ServiceGroup)
 
 type ServiceGroup struct {
 	AuthService         auth.AuthService
+	RegisterService     *auth.RegisterService
 	ScheduleService     schedule.ScheduleService
 	ConversationService conversation.ConversationService
 	PushService         push.PushService

@@ -38,9 +38,17 @@ func Routers() *gin.Engine {
 	// 开发环境免扫码登录
 	PublicGroup.POST("/auth/dev/login", v1.ApiGroupApp.AuthApi.DevLogin)
 
+	// 注册与凭证登录（无需 JWT）
+	registerSendLimiter := middleware.NewRateLimiter(1, time.Minute)
+	PublicGroup.POST("/auth/register/send-email-code", registerSendLimiter.RateLimit(), v1.ApiGroupApp.AuthApi.SendEmailCode)
+	PublicGroup.POST("/auth/register/send-sms-code", registerSendLimiter.RateLimit(), v1.ApiGroupApp.AuthApi.SendSMSCode)
+	PublicGroup.POST("/auth/register/email", middleware.NewRateLimiter(3, time.Minute).RateLimit(), v1.ApiGroupApp.AuthApi.RegisterByEmail)
+	PublicGroup.POST("/auth/register/phone", middleware.NewRateLimiter(3, time.Minute).RateLimit(), v1.ApiGroupApp.AuthApi.RegisterByPhone)
+
 	// 创建限速器: 每分钟最多 5 次（auth 端点）
 	authRateLimiter := middleware.NewRateLimiter(5, time.Minute)
 	// 对登录和刷新端点额外应用限速
+	PublicGroup.POST("/auth/login/credential", authRateLimiter.RateLimit(), v1.ApiGroupApp.AuthApi.LoginByCredential)
 	PublicGroup.POST("/auth/wechat/login", authRateLimiter.RateLimit(), v1.ApiGroupApp.AuthApi.Login)
 	PublicGroup.POST("/auth/refresh", authRateLimiter.RateLimit(), v1.ApiGroupApp.AuthApi.RefreshToken)
 
