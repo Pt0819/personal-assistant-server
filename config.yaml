@@ -75,3 +75,25 @@ oss:
   bucket-name: ""
   bucket-url: ""
   base-path: "avatars/"
+
+# 邮件配置（邮箱验证码）
+email:
+  provider: mock
+  from: "noreply@personal-assistant.app"
+  smtp:
+    host: ""
+    port: 587
+    username: ""
+    password: ""
+
+# 短信配置（蒙网）
+sms:
+  provider: mock
+  mock:
+    fixed-code: "123456"
+  montnets:
+    api-url: ""
+    user-id: ""
+    password: ""
+    apikey: ""
+
