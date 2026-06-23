@@ -7,6 +7,7 @@ import (
 	"personal-assistant-server/global"
 	"personal-assistant-server/model"
 	"personal-assistant-server/service"
+	"personal-assistant-server/service/auth"
 
 	"github.com/robfig/cron/v3"
 )
@@ -30,6 +31,12 @@ func Timer() {
 		_, err = global.GVA_Timer.AddTaskByFunc("cleanExpiredSessions", "7 3 * * *", cleanExpiredSessions, "每天凌晨3:07清理过期会话和黑名单")
 		if err != nil {
 			global.GVA_LOG.Warn("注册过期会话清理任务失败: " + err.Error())
+		}
+
+		// 每小时清理过期验证码
+		_, err = global.GVA_Timer.AddTaskByFunc("cleanExpiredVerifications", "7 * * * *", auth.CleanExpiredVerifications, "每小时第7分钟清理过期验证码")
+		if err != nil {
+			global.GVA_LOG.Warn("注册验证码清理任务失败: " + err.Error())
 		}
 	}()
 }

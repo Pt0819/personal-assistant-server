@@ -363,3 +363,16 @@ func generateVerificationCode() string {
 	}
 	return string(code)
 }
+
+// CleanExpiredVerifications deletes expired verification codes (called hourly)
+func CleanExpiredVerifications() {
+	if global.GVA_DB == nil {
+		return
+	}
+	now := time.Now()
+	emailDeleted := global.GVA_DB.Where("expires_at < ?", now).Delete(&model.EmailVerification{}).RowsAffected
+	smsDeleted := global.GVA_DB.Where("expires_at < ?", now).Delete(&model.SmsVerification{}).RowsAffected
+	if emailDeleted > 0 || smsDeleted > 0 {
+		global.GVA_LOG.Info(fmt.Sprintf("[清理] 已清理 %d 条过期邮箱验证码, %d 条过期短信验证码", emailDeleted, smsDeleted))
+	}
+}
