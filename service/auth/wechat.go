@@ -74,9 +74,14 @@ func (s *AuthService) LoginWithProfile(ctx context.Context, req LoginRequest) (*
 
 	// 3. 新用户：处理昵称和头像
 	if isNew {
+		// Generate random unique username
+		username := GenerateUniqueUsername()
+		user.Username = username
+
+		// Use WeChat nickname; fall back to username if empty
 		nickname := req.Nickname
 		if nickname == "" {
-			nickname = "微信用户"
+			nickname = username
 		}
 		user.Nickname = nickname
 
@@ -88,6 +93,7 @@ func (s *AuthService) LoginWithProfile(ctx context.Context, req LoginRequest) (*
 		}
 
 		global.GVA_DB.Model(user).Updates(map[string]interface{}{
+			"username":   user.Username,
 			"nickname":   user.Nickname,
 			"avatar_url": user.AvatarURL,
 		})
@@ -222,8 +228,10 @@ func (s *AuthService) findOrCreateUser(session *WechatSessionResponse) (*model.U
 
 	// 创建新用户
 	user = model.User{
-		OpenID:  &session.OpenID,
-		UnionID: &session.UnionID,
+		OpenID:   &session.OpenID,
+		UnionID:  &session.UnionID,
+		Username: GenerateUniqueUsername(),
+		Nickname: "微信用户",
 	}
 	if err := global.GVA_DB.Create(&user).Error; err != nil {
 		return nil, false, err
@@ -582,9 +590,11 @@ func (s *AuthService) oauthAccessToken(ctx context.Context, code string) (*model
 	err = global.GVA_DB.Where("openid = ?", userInfo.OpenID).First(&user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			username := GenerateUniqueUsername()
 			user = model.User{
 				OpenID:    &userInfo.OpenID,
 				UnionID:   &userInfo.UnionID,
+				Username:  username,
 				Nickname:  userInfo.Nickname,
 				AvatarURL: userInfo.HeadImgURL,
 			}
@@ -616,10 +626,11 @@ func (s *AuthService) DevLogin(ctx context.Context) (*LoginResponse, error) {
 	err := global.GVA_DB.Where("openid = ?", devOpenID).First(&user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			username := GenerateUniqueUsername()
 			user = model.User{
-				OpenID:    &devOpenID,
-				Nickname:  "Dev",
-				AvatarURL: "",
+				OpenID:   &devOpenID,
+				Username: username,
+				Nickname: "Dev",
 			}
 			if err := global.GVA_DB.Create(&user).Error; err != nil {
 				return nil, fmt.Errorf("创建开发用户失败: %w", err)
