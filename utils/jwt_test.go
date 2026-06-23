@@ -28,7 +28,7 @@ func TestCreateClaimsWithDeviceIDAndJTI(t *testing.T) {
 	}()
 
 	j := NewJWT()
-	claims := j.CreateClaims(42, "openid-abc", "device-xyz")
+	claims := j.CreateClaims(42, "testuser", "openid-abc", "device-xyz")
 
 	assert.Equal(t, uint(42), claims.UserID)
 	assert.Equal(t, "openid-abc", claims.OpenID)
@@ -55,7 +55,7 @@ func TestCreateTokenAndParseWithDeviceID(t *testing.T) {
 	}()
 
 	j := NewJWT()
-	claims := j.CreateClaims(1, "openid-test", "device-uuid")
+	claims := j.CreateClaims(1, "testuser", "openid-test", "device-uuid")
 	tokenStr, err := j.CreateToken(claims)
 	require.NoError(t, err)
 	assert.NotEmpty(t, tokenStr)
@@ -84,7 +84,7 @@ func TestParseTokenLax_ValidToken(t *testing.T) {
 	}()
 
 	j := NewJWT()
-	claims := j.CreateClaims(1, "openid", "device")
+	claims := j.CreateClaims(1, "testuser", "openid", "device")
 	tokenStr, _ := j.CreateToken(claims)
 
 	parsed, err := j.ParseTokenLax(tokenStr)
@@ -109,7 +109,7 @@ func TestParseTokenLax_ExpiredToken(t *testing.T) {
 	}()
 
 	j := NewJWT()
-	claims := j.CreateClaims(1, "openid", "device")
+	claims := j.CreateClaims(1, "testuser", "openid", "device")
 	claims.ExpiresAt = jwtlib.NewNumericDate(time.Now().Add(-1 * time.Hour))
 	tokenStr, _ := j.CreateToken(claims)
 
@@ -140,7 +140,7 @@ func TestParseTokenLax_InvalidSignature(t *testing.T) {
 	}()
 
 	j := NewJWT()
-	claims := j.CreateClaims(1, "openid", "device")
+	claims := j.CreateClaims(1, "testuser", "openid", "device")
 	tokenStr, _ := j.CreateToken(claims)
 
 	tampered := tokenStr + "tampered"

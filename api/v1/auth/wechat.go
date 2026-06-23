@@ -68,7 +68,7 @@ func (a *AuthApi) Logout(c *gin.Context) {
 
 	claims, _ := c.Get("claims")
 	jti := ""
-	if cl, ok := claims.(*utils.WechatClaims); ok {
+	if cl, ok := claims.(*utils.UserClaims); ok {
 		jti = cl.ID
 	}
 

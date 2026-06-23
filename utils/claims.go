@@ -59,8 +59,8 @@ func GetToken(c *gin.Context) string {
 	return token
 }
 
-// GetClaims extracts WechatClaims from the Gin context
-func GetClaims(c *gin.Context) (*WechatClaims, error) {
+// GetClaims extracts UserClaims from the Gin context
+func GetClaims(c *gin.Context) (*UserClaims, error) {
 	token := GetToken(c)
 	j := NewJWT()
 	claims, err := j.ParseToken(token)
@@ -79,7 +79,7 @@ func GetUserID(c *gin.Context) uint {
 			return cl.UserID
 		}
 	} else {
-		waitUse := claims.(*WechatClaims)
+		waitUse := claims.(*UserClaims)
 		return waitUse.UserID
 	}
 }
@@ -93,7 +93,7 @@ func GetOpenID(c *gin.Context) string {
 			return cl.OpenID
 		}
 	} else {
-		waitUse := claims.(*WechatClaims)
+		waitUse := claims.(*UserClaims)
 		return waitUse.OpenID
 	}
 }

@@ -11,10 +11,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// WechatClaims JWT claims for WeChat mini-program users
-type WechatClaims struct {
+// UserClaims JWT claims for all user types (WeChat, email, phone)
+type UserClaims struct {
 	UserID     uint   `json:"user_id"`
-	OpenID     string `json:"open_id"`
+	Username   string `json:"username"`
+	OpenID     string `json:"open_id,omitempty"`
 	DeviceID   string `json:"device_id"`    // 设备/会话标识
 	BufferTime int64  `json:"buffer_time"`
 	jwt.RegisteredClaims
@@ -39,12 +40,13 @@ func NewJWT() *JWT {
 	}
 }
 
-// CreateClaims creates WechatClaims with configured expiration
-func (j *JWT) CreateClaims(userID uint, openID string, deviceID string) WechatClaims {
+// CreateClaims creates UserClaims with configured expiration
+func (j *JWT) CreateClaims(userID uint, username string, openID string, deviceID string) UserClaims {
 	bf, _ := ParseDuration(global.GVA_CONFIG.JWT.BufferTime)
 	ep, _ := ParseDuration(global.GVA_CONFIG.JWT.ExpiresTime)
-	claims := WechatClaims{
+	claims := UserClaims{
 		UserID:     userID,
+		Username:   username,
 		OpenID:     openID,
 		DeviceID:   deviceID,
 		BufferTime: int64(bf / time.Second),
@@ -64,14 +66,14 @@ func (j *JWT) CreateClaims(userID uint, openID string, deviceID string) WechatCl
 }
 
 // CreateToken creates a signed JWT token
-func (j *JWT) CreateToken(claims WechatClaims) (string, error) {
+func (j *JWT) CreateToken(claims UserClaims) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(j.SigningKey)
 }
 
 // ParseToken parses and validates a JWT token string
-func (j *JWT) ParseToken(tokenString string) (*WechatClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &WechatClaims{}, func(token *jwt.Token) (i interface{}, e error) {
+func (j *JWT) ParseToken(tokenString string) (*UserClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &UserClaims{}, func(token *jwt.Token) (i interface{}, e error) {
 		return j.SigningKey, nil
 	})
 
@@ -90,7 +92,7 @@ func (j *JWT) ParseToken(tokenString string) (*WechatClaims, error) {
 		}
 	}
 	if token != nil {
-		if claims, ok := token.Claims.(*WechatClaims); ok && token.Valid {
+		if claims, ok := token.Claims.(*UserClaims); ok && token.Valid {
 			return claims, nil
 		}
 	}
@@ -98,8 +100,8 @@ func (j *JWT) ParseToken(tokenString string) (*WechatClaims, error) {
 }
 
 // ParseTokenLax parses a JWT without validating exp/nbf — used for logout endpoint.
-func (j *JWT) ParseTokenLax(tokenString string) (*WechatClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &WechatClaims{},
+func (j *JWT) ParseTokenLax(tokenString string) (*UserClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &UserClaims{},
 		func(token *jwt.Token) (interface{}, error) {
 			return j.SigningKey, nil
 		},
@@ -116,7 +118,7 @@ func (j *JWT) ParseTokenLax(tokenString string) (*WechatClaims, error) {
 		}
 	}
 	if token != nil {
-		if claims, ok := token.Claims.(*WechatClaims); ok {
+		if claims, ok := token.Claims.(*UserClaims); ok {
 			return claims, nil
 		}
 	}

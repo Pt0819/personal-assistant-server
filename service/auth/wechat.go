@@ -160,7 +160,11 @@ func (s *AuthService) LoginWithProfile(ctx context.Context, req LoginRequest) (*
 
 	// 9. 生成 JWT access_token
 	j := utils.NewJWT()
-	claims := j.CreateClaims(user.ID, user.OpenID, deviceID)
+	openID := ""
+	if user.OpenID != nil {
+		openID = *user.OpenID
+	}
+	claims := j.CreateClaims(user.ID, user.Username, openID, deviceID)
 	accessToken, err := j.CreateToken(claims)
 	if err != nil {
 		return nil, fmt.Errorf("生成token失败: %w", err)
@@ -210,7 +214,7 @@ func (s *AuthService) findOrCreateUser(session *WechatSessionResponse) (*model.U
 	err := global.GVA_DB.Where("openid = ?", session.OpenID).First(&user).Error
 	if err == nil {
 		// 用户已存在，更新 unionid（如果有）
-		if session.UnionID != "" && user.UnionID == "" {
+		if session.UnionID != "" && (user.UnionID == nil || *user.UnionID == "") {
 			global.GVA_DB.Model(&user).Update("unionid", session.UnionID)
 		}
 		return &user, false, nil
@@ -218,8 +222,8 @@ func (s *AuthService) findOrCreateUser(session *WechatSessionResponse) (*model.U
 
 	// 创建新用户
 	user = model.User{
-		OpenID:  session.OpenID,
-		UnionID: session.UnionID,
+		OpenID:  &session.OpenID,
+		UnionID: &session.UnionID,
 	}
 	if err := global.GVA_DB.Create(&user).Error; err != nil {
 		return nil, false, err
@@ -298,7 +302,11 @@ func (s *AuthService) RefreshToken(ctx context.Context, req RefreshTokenRequest)
 	}
 
 	j := utils.NewJWT()
-	claims := j.CreateClaims(user.ID, user.OpenID, session.DeviceID)
+	openID := ""
+	if user.OpenID != nil {
+		openID = *user.OpenID
+	}
+	claims := j.CreateClaims(user.ID, user.Username, openID, session.DeviceID)
 	accessToken, err := j.CreateToken(claims)
 	if err != nil {
 		return nil, fmt.Errorf("生成token失败: %w", err)
@@ -444,7 +452,11 @@ func (s *AuthService) WebCallback(ctx context.Context, code, state string) (stri
 
 	// 5. 生成 JWT
 	j := utils.NewJWT()
-	claims := j.CreateClaims(user.ID, user.OpenID, deviceID)
+	openID := ""
+	if user.OpenID != nil {
+		openID = *user.OpenID
+	}
+	claims := j.CreateClaims(user.ID, user.Username, openID, deviceID)
 	accessToken, err := j.CreateToken(claims)
 	if err != nil {
 		return "", fmt.Errorf("生成token失败: %w", err)
@@ -571,8 +583,8 @@ func (s *AuthService) oauthAccessToken(ctx context.Context, code string) (*model
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			user = model.User{
-				OpenID:    userInfo.OpenID,
-				UnionID:   userInfo.UnionID,
+				OpenID:    &userInfo.OpenID,
+				UnionID:   &userInfo.UnionID,
 				Nickname:  userInfo.Nickname,
 				AvatarURL: userInfo.HeadImgURL,
 			}
@@ -584,7 +596,7 @@ func (s *AuthService) oauthAccessToken(ctx context.Context, code string) (*model
 		return nil, fmt.Errorf("查询用户失败: %w", err)
 	}
 	// 补充 unionid 和头像
-	if userInfo.UnionID != "" && user.UnionID == "" {
+	if userInfo.UnionID != "" && (user.UnionID == nil || *user.UnionID == "") {
 		global.GVA_DB.Model(&user).Updates(map[string]interface{}{
 			"unionid":    userInfo.UnionID,
 			"avatar_url": userInfo.HeadImgURL,
@@ -605,7 +617,7 @@ func (s *AuthService) DevLogin(ctx context.Context) (*LoginResponse, error) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			user = model.User{
-				OpenID:    devOpenID,
+				OpenID:    &devOpenID,
 				Nickname:  "Dev",
 				AvatarURL: "",
 			}
@@ -644,7 +656,11 @@ func (s *AuthService) buildLoginResponse(user *model.User, deviceID, deviceInfo 
 	global.GVA_DB.Create(&session)
 
 	j := utils.NewJWT()
-	claims := j.CreateClaims(user.ID, user.OpenID, deviceID)
+	openID := ""
+	if user.OpenID != nil {
+		openID = *user.OpenID
+	}
+	claims := j.CreateClaims(user.ID, user.Username, openID, deviceID)
 	accessToken, err := j.CreateToken(claims)
 	if err != nil {
 		return nil, fmt.Errorf("生成token失败: %w", err)
