@@ -57,7 +57,7 @@ func TestJWTAuth_BlacklistedToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	j := utils.NewJWT()
-	claims := j.CreateClaims(1, "openid", "device-1")
+	claims := j.CreateClaims(1, "testuser", "openid", "device-1")
 	tokenStr, err := j.CreateToken(claims)
 	require.NoError(t, err)
 
@@ -84,7 +84,7 @@ func TestJWTAuth_ValidToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	j := utils.NewJWT()
-	claims := j.CreateClaims(1, "openid", "device-1")
+	claims := j.CreateClaims(1, "testuser", "openid", "device-1")
 	tokenStr, err := j.CreateToken(claims)
 	require.NoError(t, err)
 

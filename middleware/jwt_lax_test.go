@@ -18,7 +18,7 @@ func TestJWTAuthLax_ValidToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	j := utils.NewJWT()
-	claims := j.CreateClaims(1, "openid", "device-1")
+	claims := j.CreateClaims(1, "testuser", "openid", "device-1")
 	tokenStr, _ := j.CreateToken(claims)
 
 	w := httptest.NewRecorder()
@@ -39,7 +39,7 @@ func TestJWTAuthLax_ExpiredToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	j := utils.NewJWT()
-	claims := j.CreateClaims(1, "openid", "device-1")
+	claims := j.CreateClaims(1, "testuser", "openid", "device-1")
 	claims.ExpiresAt = jwtlib.NewNumericDate(time.Now().Add(-1 * time.Hour))
 	tokenStr, _ := j.CreateToken(claims)
 
@@ -73,7 +73,7 @@ func TestJWTAuthLax_InvalidSignature(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	j := utils.NewJWT()
-	claims := j.CreateClaims(1, "openid", "device-1")
+	claims := j.CreateClaims(1, "testuser", "openid", "device-1")
 	tokenStr, _ := j.CreateToken(claims)
 
 	w := httptest.NewRecorder()
